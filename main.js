@@ -14,6 +14,7 @@ const options = {
     password: import.meta.env.VITE_MQTT_PASS
 };
 
+const client = mqtt.connect(brokerUrl, options);
 
 // ==========================================
 // UI ELEMENTS & STORAGE
