@@ -1,4 +1,4 @@
-
+import mqtt from 'mqtt/dist/mqtt.min.js';
 // ==========================================
 // ENVIRONMENT CONFIGURATION
 // ==========================================
