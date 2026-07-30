@@ -10,7 +10,7 @@
 
 <div class="container">
     <div class="header">
-        <h1>Seismic Network Monitor</h1>
+        <h1 id="page-title">Seismic Network Monitor</h1>
         <div>
             <span id="conn-dot" class="status-dot disconnected"></span>
             <span id="conn-text">Connecting to Broker...</span>
@@ -18,7 +18,7 @@
     </div>
 
     <!-- Battery & Channel Status Grid -->
-    <div class="grid">
+    <div class="grid" id="status-grid">
         <div class="card" id="card-ch1">
             <h2>CHANNEL 1</h2>
             <div class="batt-val" id="batt-ch1">-- V</div>
@@ -46,6 +46,7 @@
                 <option value="1">Node 1 Only</option>
                 <option value="2">Node 2 Only</option>
                 <option value="3">Node 3 Only</option>
+                <option value="system">System Only</option>
             </select>
         </div>
     </div>

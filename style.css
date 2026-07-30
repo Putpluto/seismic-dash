@@ -24,7 +24,13 @@ body {
     border-radius: 8px;
     padding: 20px;
     text-align: center;
-    transition: border-color 0.2s;
+    transition: all 0.2s;
+    cursor: pointer; /* Makes it obvious it is clickable */
+}
+.card:hover {
+    border-color: #4CAF50;
+    transform: translateY(-3px);
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2);
 }
 .card h2 { margin-top: 0; color: #aaa; font-size: 1.2rem; }
 .batt-val { font-size: 2rem; font-weight: bold; margin: 10px 0; color: #4CAF50; }

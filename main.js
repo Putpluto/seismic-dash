@@ -24,18 +24,58 @@ const terminal = document.getElementById('terminal');
 const connDot = document.getElementById('conn-dot');
 const connText = document.getElementById('conn-text');
 const nodeFilter = document.getElementById('nodeFilter');
+const pageTitle = document.getElementById('page-title');
+const statusGrid = document.getElementById('status-grid');
 
 let masterEventLog = [];
 
-// Attach event listener for the dropdown
+// ==========================================
+// URL PARAMETER HANDLING (For New Windows)
+// ==========================================
+const urlParams = new URLSearchParams(window.location.search);
+const singleNodeView = urlParams.get('node');
+
+if (singleNodeView) {
+    nodeFilter.value = singleNodeView;
+    pageTitle.innerText = `Node ${singleNodeView} Event History`;
+    statusGrid.style.display = 'none'; // Hide the grid in dedicated node view
+}
+
+// Add click listeners to cards to open new tab
+document.getElementById('card-ch1').addEventListener('click', () => window.open('?node=1', '_blank'));
+document.getElementById('card-ch2').addEventListener('click', () => window.open('?node=2', '_blank'));
+document.getElementById('card-ch3').addEventListener('click', () => window.open('?node=3', '_blank'));
+
 nodeFilter.addEventListener('change', renderLogs);
+
+// ==========================================
+// SHARED UI HELPER FUNCTIONS
+// ==========================================
+function updateBatteryUI(ch, voltage, timestampDate) {
+    const volt = parseFloat(voltage).toFixed(2);
+    if (ch >= 1 && ch <= 3) {
+        const battEl = document.getElementById(`batt-ch${ch}`);
+        if (!battEl) return;
+        
+        battEl.innerText = `${volt} V`;
+        
+        if (volt >= 3.6) battEl.className = 'batt-val';
+        else if (volt >= 3.3) battEl.className = 'batt-val batt-low';
+        else battEl.className = 'batt-val batt-crit';
+
+        document.getElementById(`status-ch${ch}`).innerText = `Last updated: ${timestampDate.toLocaleString()}`;
+    }
+}
 
 function renderLogs() {
     terminal.innerHTML = '';
     const selectedFilter = nodeFilter.value;
 
     masterEventLog.forEach(event => {
-        if (selectedFilter !== 'all') {
+        // Evaluate filter logic
+        if (selectedFilter === 'system') {
+            if (event.type !== 'system' && event.type !== 'health' && event.type !== 'alarm') return;
+        } else if (selectedFilter !== 'all') {
             const targetNode = parseInt(selectedFilter);
             const matchesChannel = event.channel === targetNode;
             const matchesDetails = event.details && event.details.includes(`Node ${targetNode}`);
@@ -45,7 +85,8 @@ function renderLogs() {
         const div = document.createElement('div');
         div.className = 'log-entry';
         
-        const timeStr = event.created_at ? new Date(event.created_at).toLocaleTimeString() : new Date().toLocaleTimeString();
+        // Use toLocaleString() to include both Date and Time
+        const timeStr = event.created_at ? new Date(event.created_at).toLocaleString() : new Date().toLocaleString();
         
         let colorClass = '';
         if (event.type === 'alarm') colorClass = 'log-alarm';
@@ -101,6 +142,10 @@ async function loadHistory() {
             } else if (event.event_type === 'BATTERY_UPDATE') {
                 msg = `🔋 DB: Channel ${event.channel} reported ${event.value} V`;
                 type = 'batt';
+                
+                // Populate the UI card with the latest database voltage as we iterate
+                updateBatteryUI(event.channel, event.value, new Date(event.created_at));
+
             } else if (event.event_type.includes('HEALTH') || event.event_type.includes('DEAD')) {
                 msg = `🩺 DB: ${event.details}`;
                 type = 'health';
@@ -170,10 +215,12 @@ client.on('message', (topic, message) => {
         const ch = payload.node;
         addEvent(`⚠️ LIVE: Node ${ch} Detected Motion!`, 'node', null, ch, `Node ${ch} motion`);
         
-        const card = document.getElementById(`card-ch${ch}`);
-        if (card) {
-            card.classList.add('node-triggered');
-            setTimeout(() => card.classList.remove('node-triggered'), 2000);
+        if (!singleNodeView) {
+            const card = document.getElementById(`card-ch${ch}`);
+            if (card) {
+                card.classList.add('node-triggered');
+                setTimeout(() => card.classList.remove('node-triggered'), 2000);
+            }
         }
     }
 
@@ -187,18 +234,11 @@ client.on('message', (topic, message) => {
     
     else if (topic === 'seismic/gateway/battery') {
         const ch = payload.channel;
-        const volt = parseFloat(payload.voltage).toFixed(2);
+        const volt = payload.voltage;
         
-        if (ch >= 1 && ch <= 3) {
-            const battEl = document.getElementById(`batt-ch${ch}`);
-            battEl.innerText = `${volt} V`;
-            
-            if (volt >= 3.6) battEl.className = 'batt-val';
-            else if (volt >= 3.3) battEl.className = 'batt-val batt-low';
-            else battEl.className = 'batt-val batt-crit';
-
-            document.getElementById(`status-ch${ch}`).innerText = `Last updated: ${new Date().toLocaleTimeString()}`;
-            addEvent(`🔋 LIVE: Channel ${ch} reported ${volt} V`, 'batt', null, ch, `Battery ${volt}V`);
-        }
+        // Update the card UI using the shared helper function
+        updateBatteryUI(ch, volt, new Date());
+        
+        addEvent(`🔋 LIVE: Channel ${ch} reported ${parseFloat(volt).toFixed(2)} V`, 'batt', null, ch, `Battery ${parseFloat(volt).toFixed(2)}V`);
     }
 });
