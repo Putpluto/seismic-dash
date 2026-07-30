@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seismic Network Monitor</title>
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>Seismic Network Monitor</h1>
+        <div>
+            <span id="conn-dot" class="status-dot disconnected"></span>
+            <span id="conn-text">Connecting to Broker...</span>
+        </div>
+    </div>
+
+    <!-- Battery & Channel Status Grid -->
+    <div class="grid">
+        <div class="card" id="card-ch1">
+            <h2>CHANNEL 1</h2>
+            <div class="batt-val" id="batt-ch1">-- V</div>
+            <div class="node-status" id="status-ch1">Waiting for data...</div>
+        </div>
+        <div class="card" id="card-ch2">
+            <h2>CHANNEL 2</h2>
+            <div class="batt-val" id="batt-ch2">-- V</div>
+            <div class="node-status" id="status-ch2">Waiting for data...</div>
+        </div>
+        <div class="card" id="card-ch3">
+            <h2>CHANNEL 3</h2>
+            <div class="batt-val" id="batt-ch3">-- V</div>
+            <div class="node-status" id="status-ch3">Waiting for data...</div>
+        </div>
+    </div>
+
+    <!-- Trigger History Header with Dropdown Filter -->
+    <div class="controls-bar">
+        <h3>Event History (Live & Database)</h3>
+        <div>
+            <label for="nodeFilter">Filter Node:</label>
+            <select id="nodeFilter">
+                <option value="all">All Nodes & System</option>
+                <option value="1">Node 1 Only</option>
+                <option value="2">Node 2 Only</option>
+                <option value="3">Node 3 Only</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="log-container" id="terminal"></div>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>
