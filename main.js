@@ -118,22 +118,32 @@ function addEvent(message, type = 'normal', timestamp = null, channel = null, de
 // ==========================================
 async function loadHistory() {
     try {
-        // Fetch all battery updates, ordered by newest first (descending), no limit
-        const response = await fetch(`${SUPABASE_URL}?select=*&event_type=eq.BATTERY_UPDATE&order=created_at.desc`, {
-            headers: {
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`
-            }
-        });
+        const fetchHeaders = {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`
+        };
+
+        // Call 1: Fetch ALL battery updates
+        const batteryPromise = fetch(`${SUPABASE_URL}?select=*&event_type=eq.BATTERY_UPDATE`, { headers: fetchHeaders });
         
-        if (!response.ok) throw new Error('Network response was not ok');
+        // Call 2: Fetch only the last 100 non-battery events (Alarms, Triggers, System, Health)
+        const triggerPromise = fetch(`${SUPABASE_URL}?select=*&event_type=neq.BATTERY_UPDATE&order=created_at.desc&limit=100`, { headers: fetchHeaders });
+
+        // Wait for both database queries to finish simultaneously
+        const [batteryRes, triggerRes] = await Promise.all([batteryPromise, triggerPromise]);
         
-        let data = await response.json();
+        if (!batteryRes.ok || !triggerRes.ok) throw new Error('Network response was not ok');
         
-        // Reverse the array so that the oldest records process first, keeping the terminal chronological
-        data.reverse();
+        const batteryData = await batteryRes.json();
+        const triggerData = await triggerRes.json();
         
-        data.forEach(event => {
+        // Combine both datasets into one array
+        let combinedData = [...batteryData, ...triggerData];
+        
+        // Sort everything chronologically (oldest to newest) based on the timestamp
+        combinedData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        
+        combinedData.forEach(event => {
             let msg = '';
             let type = 'normal';
             
@@ -177,7 +187,6 @@ async function loadHistory() {
 }
 
 loadHistory();
-
 // ==========================================
 // LIVE CONNECTION HANDLING
 // ==========================================
