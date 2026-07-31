@@ -1,4 +1,5 @@
 import mqtt from 'mqtt';
+
 // ==========================================
 // ENVIRONMENT CONFIGURATION
 // ==========================================
@@ -117,7 +118,8 @@ function addEvent(message, type = 'normal', timestamp = null, channel = null, de
 // ==========================================
 async function loadHistory() {
     try {
-        const response = await fetch(`${SUPABASE_URL}?select=*&order=created_at.asc&limit=100`, {
+        // Fetch all battery updates, ordered by newest first (descending), no limit
+        const response = await fetch(`${SUPABASE_URL}?select=*&event_type=eq.BATTERY_UPDATE&order=created_at.desc`, {
             headers: {
                 'apikey': SUPABASE_KEY,
                 'Authorization': `Bearer ${SUPABASE_KEY}`
@@ -126,7 +128,10 @@ async function loadHistory() {
         
         if (!response.ok) throw new Error('Network response was not ok');
         
-        const data = await response.json();
+        let data = await response.json();
+        
+        // Reverse the array so that the oldest records process first, keeping the terminal chronological
+        data.reverse();
         
         data.forEach(event => {
             let msg = '';
