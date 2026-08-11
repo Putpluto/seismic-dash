@@ -34,18 +34,30 @@ let batteryHistory = []; // Raw battery datapoints: { channel, voltage, timestam
 let battChart = null;    // Chart.js instance
 
 // ==========================================
-// CHART INITIALIZATION & RENDERING
+// DATE FORMATTERS (DD/MM/YYYY)
 // ==========================================
-
-// Helper function to format timestamp to MM/DD/HH
 function formatChartDate(timestamp) {
     const d = new Date(timestamp);
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
     const hh = String(d.getHours()).padStart(2, '0');
-    return `${mm}/${dd}/${hh}`;
+    return `${dd}/${mm}/${hh}`; // DD/MM/HH
 }
 
+function formatLogDate(timestamp) {
+    const d = timestamp ? new Date(timestamp) : new Date();
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${dd}/${mm}/${yyyy} ${hh}:${min}:${ss}`;
+}
+
+// ==========================================
+// CHART INITIALIZATION & RENDERING
+// ==========================================
 function initChart() {
     const ctx = document.getElementById('batteryChart').getContext('2d');
     battChart = new Chart(ctx, {
@@ -58,7 +70,7 @@ function initChart() {
             scales: {
                 x: {
                     type: 'category',
-                    title: { display: true, text: 'Time (MM/DD/HH)', color: '#888' },
+                    title: { display: true, text: 'Time (DD/MM/HH)', color: '#888' },
                     ticks: { color: '#aaa', maxRotation: 45, autoSkip: true, maxTicksLimit: 12 },
                     grid: { color: '#333' }
                 },
@@ -85,8 +97,8 @@ function initChart() {
 function updateChart() {
     if (!battChart) return;
 
-    const selectedNode = chartNodeFilter.value; // 'all', '1', '2', '3'
-    const selectedTime = chartTimeFilter.value; // '1h', '24h', '7d', 'all'
+    const selectedNode = chartNodeFilter.value;
+    const selectedTime = chartTimeFilter.value;
     
     const now = new Date().getTime();
     let timeLimitMs = 0;
@@ -112,7 +124,7 @@ function updateChart() {
     // Sort the raw data chronologically first
     const sortedData = [...filteredByTime].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-    // Get unique labels in MM/DD/HH format for the X-axis
+    // Get unique labels in DD/MM/HH format for the X-axis
     const timestamps = Array.from(new Set(sortedData.map(d => formatChartDate(d.timestamp))));
 
     const datasets = channelsToRender.map(ch => {
@@ -122,61 +134,6 @@ function updateChart() {
             label: `Node ${ch}`,
             data: chData.map(d => ({
                 x: formatChartDate(d.timestamp),
-                y: d.voltage
-            })),
-            borderColor: colors[ch]?.border || '#ffffff',
-            backgroundColor: colors[ch]?.bg || 'transparent',
-            tension: 0.2,
-            fill: false,
-            pointRadius: 3
-        };
-    });
-
-    battChart.data.labels = timestamps;
-    battChart.data.datasets = datasets;
-    battChart.update();
-}
-
-function updateChart() {
-    if (!battChart) return;
-
-    const selectedNode = chartNodeFilter.value; // 'all', '1', '2', '3'
-    const selectedTime = chartTimeFilter.value; // '1h', '24h', '7d', 'all'
-    
-    const now = new Date().getTime();
-    let timeLimitMs = 0;
-    if (selectedTime === '1h') timeLimitMs = 60 * 60 * 1000;
-    if (selectedTime === '24h') timeLimitMs = 24 * 60 * 60 * 1000;
-    if (selectedTime === '7d') timeLimitMs = 7 * 24 * 60 * 60 * 1000;
-
-    // Filter data by time frame
-    const filteredByTime = batteryHistory.filter(entry => {
-        if (selectedTime === 'all') return true;
-        const entryTime = new Date(entry.timestamp).getTime();
-        return (now - entryTime) <= timeLimitMs;
-    });
-
-    const colors = {
-        1: { border: '#4CAF50', bg: 'rgba(76, 175, 80, 0.1)' },
-        2: { border: '#2196F3', bg: 'rgba(33, 150, 243, 0.1)' },
-        3: { border: '#FF9800', bg: 'rgba(255, 152, 0, 0.1)' }
-    };
-
-    let channelsToRender = selectedNode === 'all' ? [1, 2, 3] : [parseInt(selectedNode)];
-
-    // Get unique sorted labels (timestamps)
-    const timestamps = Array.from(new Set(filteredByTime.map(d => new Date(d.timestamp).toLocaleTimeString())))
-        .sort((a, b) => new Date(a) - new Date(b));
-
-    const datasets = channelsToRender.map(ch => {
-        const chData = filteredByTime
-            .filter(d => d.channel === ch)
-            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-        return {
-            label: `Node ${ch}`,
-            data: chData.map(d => ({
-                x: new Date(d.timestamp).toLocaleTimeString(),
                 y: d.voltage
             })),
             borderColor: colors[ch]?.border || '#ffffff',
@@ -243,7 +200,8 @@ function updateBatteryUI(ch, voltage, timestampDate) {
         else if (volt >= 3.3) battEl.className = 'batt-val batt-low';
         else battEl.className = 'batt-val batt-crit';
 
-        document.getElementById(`status-ch${ch}`).innerText = `Last updated: ${timestampDate.toLocaleTimeString()}`;
+        const timeStr = formatLogDate(timestampDate).split(' ')[1];
+        document.getElementById(`status-ch${ch}`).innerText = `Last updated: ${timeStr}`;
     }
 }
 
@@ -264,7 +222,7 @@ function renderLogs() {
         const div = document.createElement('div');
         div.className = 'log-entry';
         
-        const timeStr = event.created_at ? new Date(event.created_at).toLocaleString() : new Date().toLocaleString();
+        const timeStr = formatLogDate(event.created_at);
         
         let colorClass = '';
         if (event.type === 'alarm') colorClass = 'log-alarm';
