@@ -18,35 +18,150 @@ const options = {
 const client = mqtt.connect(brokerUrl, options);
 
 // ==========================================
-// UI ELEMENTS & STORAGE
+// UI ELEMENTS & DATA STORAGE
 // ==========================================
 const terminal = document.getElementById('terminal');
 const connDot = document.getElementById('conn-dot');
 const connText = document.getElementById('conn-text');
 const nodeFilter = document.getElementById('nodeFilter');
+const chartNodeFilter = document.getElementById('chartNodeFilter');
+const chartTimeFilter = document.getElementById('chartTimeFilter');
 const pageTitle = document.getElementById('page-title');
 const statusGrid = document.getElementById('status-grid');
 
 let masterEventLog = [];
+let batteryHistory = []; // Raw battery datapoints: { channel, voltage, timestamp }
+let battChart = null;    // Chart.js instance
 
 // ==========================================
-// URL PARAMETER HANDLING (For New Windows)
+// CHART INITIALIZATION & RENDERING
+// ==========================================
+function initChart() {
+    const ctx = document.getElementById('batteryChart').getContext('2d');
+    battChart = new Chart(ctx, {
+        type: 'line',
+        data: { datasets: [] },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: {
+                    type: 'category',
+                    title: { display: true, text: 'Time Stamp', color: '#888' },
+                    ticks: { color: '#aaa', maxRotation: 45, autoSkip: true, maxTicksLimit: 12 },
+                    grid: { color: '#333' }
+                },
+                y: {
+                    title: { display: true, text: 'Voltage (V)', color: '#888' },
+                    ticks: { color: '#aaa' },
+                    grid: { color: '#333' },
+                    suggestedMin: 2.8,
+                    suggestedMax: 4.2
+                }
+            },
+            plugins: {
+                legend: { labels: { color: '#fff' } },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => ` Node ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)} V`
+                    }
+                }
+            }
+        }
+    });
+}
+
+function updateChart() {
+    if (!battChart) return;
+
+    const selectedNode = chartNodeFilter.value; // 'all', '1', '2', '3'
+    const selectedTime = chartTimeFilter.value; // '1h', '24h', '7d', 'all'
+    
+    const now = new Date().getTime();
+    let timeLimitMs = 0;
+    if (selectedTime === '1h') timeLimitMs = 60 * 60 * 1000;
+    if (selectedTime === '24h') timeLimitMs = 24 * 60 * 60 * 1000;
+    if (selectedTime === '7d') timeLimitMs = 7 * 24 * 60 * 60 * 1000;
+
+    // Filter data by time frame
+    const filteredByTime = batteryHistory.filter(entry => {
+        if (selectedTime === 'all') return true;
+        const entryTime = new Date(entry.timestamp).getTime();
+        return (now - entryTime) <= timeLimitMs;
+    });
+
+    const colors = {
+        1: { border: '#4CAF50', bg: 'rgba(76, 175, 80, 0.1)' },
+        2: { border: '#2196F3', bg: 'rgba(33, 150, 243, 0.1)' },
+        3: { border: '#FF9800', bg: 'rgba(255, 152, 0, 0.1)' }
+    };
+
+    let channelsToRender = selectedNode === 'all' ? [1, 2, 3] : [parseInt(selectedNode)];
+
+    // Get unique sorted labels (timestamps)
+    const timestamps = Array.from(new Set(filteredByTime.map(d => new Date(d.timestamp).toLocaleTimeString())))
+        .sort((a, b) => new Date(a) - new Date(b));
+
+    const datasets = channelsToRender.map(ch => {
+        const chData = filteredByTime
+            .filter(d => d.channel === ch)
+            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+        return {
+            label: `Node ${ch}`,
+            data: chData.map(d => ({
+                x: new Date(d.timestamp).toLocaleTimeString(),
+                y: d.voltage
+            })),
+            borderColor: colors[ch]?.border || '#ffffff',
+            backgroundColor: colors[ch]?.bg || 'transparent',
+            tension: 0.2,
+            fill: false,
+            pointRadius: 3
+        };
+    });
+
+    battChart.data.labels = timestamps;
+    battChart.data.datasets = datasets;
+    battChart.update();
+}
+
+// ==========================================
+// URL PARAMETER HANDLING & CLICK EVENTS
 // ==========================================
 const urlParams = new URLSearchParams(window.location.search);
 const singleNodeView = urlParams.get('node');
 
 if (singleNodeView) {
     nodeFilter.value = singleNodeView;
+    chartNodeFilter.value = singleNodeView;
     pageTitle.innerText = `Node ${singleNodeView} Event History`;
-    statusGrid.style.display = 'none'; // Hide the grid in dedicated node view
+    statusGrid.style.display = 'none';
 }
 
-// Add click listeners to cards to open new tab
-document.getElementById('card-ch1').addEventListener('click', () => window.open('?node=1', '_blank'));
-document.getElementById('card-ch2').addEventListener('click', () => window.open('?node=2', '_blank'));
-document.getElementById('card-ch3').addEventListener('click', () => window.open('?node=3', '_blank'));
+// Node Card Click Handler: Scroll to & filter graph
+[1, 2, 3].forEach(ch => {
+    const card = document.getElementById(`card-ch${ch}`);
+    if (card) {
+        card.addEventListener('click', () => {
+            chartNodeFilter.value = String(ch);
+            nodeFilter.value = String(ch);
+            renderLogs();
+            updateChart();
+            
+            // Scroll smoothly to graph view
+            document.getElementById('chart-section').scrollIntoView({ behavior: 'smooth' });
+        });
+    }
+});
 
+chartNodeFilter.addEventListener('change', updateChart);
+chartTimeFilter.addEventListener('change', updateChart);
 nodeFilter.addEventListener('change', renderLogs);
+
+// Initialize Chart
+initChart();
 
 // ==========================================
 // SHARED UI HELPER FUNCTIONS
@@ -63,7 +178,7 @@ function updateBatteryUI(ch, voltage, timestampDate) {
         else if (volt >= 3.3) battEl.className = 'batt-val batt-low';
         else battEl.className = 'batt-val batt-crit';
 
-        document.getElementById(`status-ch${ch}`).innerText = `Last updated: ${timestampDate.toLocaleString()}`;
+        document.getElementById(`status-ch${ch}`).innerText = `Last updated: ${timestampDate.toLocaleTimeString()}`;
     }
 }
 
@@ -72,7 +187,6 @@ function renderLogs() {
     const selectedFilter = nodeFilter.value;
 
     masterEventLog.forEach(event => {
-        // Evaluate filter logic
         if (selectedFilter === 'system') {
             if (event.type !== 'system' && event.type !== 'health' && event.type !== 'alarm') return;
         } else if (selectedFilter !== 'all') {
@@ -85,7 +199,6 @@ function renderLogs() {
         const div = document.createElement('div');
         div.className = 'log-entry';
         
-        // Use toLocaleString() to include both Date and Time
         const timeStr = event.created_at ? new Date(event.created_at).toLocaleString() : new Date().toLocaleString();
         
         let colorClass = '';
@@ -123,24 +236,16 @@ async function loadHistory() {
             'Authorization': `Bearer ${SUPABASE_KEY}`
         };
 
-        // Call 1: Fetch ALL battery updates
         const batteryPromise = fetch(`${SUPABASE_URL}?select=*&event_type=eq.BATTERY_UPDATE`, { headers: fetchHeaders });
-        
-        // Call 2: Fetch only the last 100 non-battery events (Alarms, Triggers, System, Health)
         const triggerPromise = fetch(`${SUPABASE_URL}?select=*&event_type=neq.BATTERY_UPDATE&order=created_at.desc&limit=100`, { headers: fetchHeaders });
 
-        // Wait for both database queries to finish simultaneously
         const [batteryRes, triggerRes] = await Promise.all([batteryPromise, triggerPromise]);
-        
-        if (!batteryRes.ok || !triggerRes.ok) throw new Error('Network response was not ok');
+        if (!batteryRes.ok || !triggerRes.ok) throw new Error('Network response failed');
         
         const batteryData = await batteryRes.json();
         const triggerData = await triggerRes.json();
         
-        // Combine both datasets into one array
         let combinedData = [...batteryData, ...triggerData];
-        
-        // Sort everything chronologically (oldest to newest) based on the timestamp
         combinedData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
         
         combinedData.forEach(event => {
@@ -157,8 +262,13 @@ async function loadHistory() {
                 msg = `🔋 DB: Channel ${event.channel} reported ${event.value} V`;
                 type = 'batt';
                 
-                // Populate the UI card with the latest database voltage as we iterate
-                updateBatteryUI(event.channel, event.value, new Date(event.created_at));
+                const vNum = parseFloat(event.value);
+                const time = event.created_at;
+
+                // Push to chart telemetry repository
+                batteryHistory.push({ channel: event.channel, voltage: vNum, timestamp: time });
+
+                updateBatteryUI(event.channel, vNum, new Date(time));
 
             } else if (event.event_type.includes('HEALTH') || event.event_type.includes('DEAD')) {
                 msg = `🩺 DB: ${event.details}`;
@@ -180,6 +290,7 @@ async function loadHistory() {
         });
         
         renderLogs();
+        updateChart();
         
     } catch (error) {
         addEvent(`Failed to load history from Supabase: ${error.message}`, 'health');
@@ -187,6 +298,7 @@ async function loadHistory() {
 }
 
 loadHistory();
+
 // ==========================================
 // LIVE CONNECTION HANDLING
 // ==========================================
@@ -209,9 +321,8 @@ client.on('offline', () => {
 // LIVE INCOMING MESSAGE ROUTING
 // ==========================================
 client.on('message', (topic, message) => {
-    const payloadStr = message.toString();
     let payload;
-    try { payload = JSON.parse(payloadStr); } 
+    try { payload = JSON.parse(message.toString()); } 
     catch (e) { return; }
 
     if (topic === 'seismic/gateway/alarm') {
@@ -247,11 +358,15 @@ client.on('message', (topic, message) => {
     
     else if (topic === 'seismic/gateway/battery') {
         const ch = payload.channel;
-        const volt = payload.voltage;
+        const volt = parseFloat(payload.voltage);
+        const nowIso = new Date().toISOString();
         
-        // Update the card UI using the shared helper function
         updateBatteryUI(ch, volt, new Date());
         
-        addEvent(`🔋 LIVE: Channel ${ch} reported ${parseFloat(volt).toFixed(2)} V`, 'batt', null, ch, `Battery ${parseFloat(volt).toFixed(2)}V`);
+        // Save live reading to chart data & refresh chart
+        batteryHistory.push({ channel: ch, voltage: volt, timestamp: nowIso });
+        updateChart();
+
+        addEvent(`🔋 LIVE: Channel ${ch} reported ${volt.toFixed(2)} V`, 'batt', null, ch, `Battery ${volt.toFixed(2)}V`);
     }
 });

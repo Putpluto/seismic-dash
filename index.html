@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Seismic Network Monitor</title>
     <link rel="stylesheet" href="./style.css">
+    <!-- Include Chart.js for Telemetry Graphing -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
@@ -19,22 +21,54 @@
 
     <!-- Battery & Channel Status Grid -->
     <div class="grid" id="status-grid">
-        <div class="card" id="card-ch1">
+        <div class="card" id="card-ch1" data-node="1">
             <h2>CHANNEL 1</h2>
             <div class="batt-val" id="batt-ch1">-- V</div>
             <div class="node-status" id="status-ch1">Waiting for data...</div>
         </div>
-        <div class="card" id="card-ch2">
+        <div class="card" id="card-ch2" data-node="2">
             <h2>CHANNEL 2</h2>
             <div class="batt-val" id="batt-ch2">-- V</div>
             <div class="node-status" id="status-ch2">Waiting for data...</div>
         </div>
-        <div class="card" id="card-ch3">
+        <div class="card" id="card-ch3" data-node="3">
             <h2>CHANNEL 3</h2>
             <div class="batt-val" id="batt-ch3">-- V</div>
             <div class="node-status" id="status-ch3">Waiting for data...</div>
         </div>
     </div>
+
+    <!-- Telemetry Graph Section -->
+    <div class="chart-section" id="chart-section">
+        <div class="controls-bar">
+            <h3>Battery Telemetry History</h3>
+            <div class="filter-group">
+                <div>
+                    <label for="chartNodeFilter">Chart Node:</label>
+                    <select id="chartNodeFilter">
+                        <option value="all">All Nodes</option>
+                        <option value="1">Node 1</option>
+                        <option value="2">Node 2</option>
+                        <option value="3">Node 3</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="chartTimeFilter">Time Range:</label>
+                    <select id="chartTimeFilter">
+                        <option value="all">All Time</option>
+                        <option value="1h">Last 1 Hour</option>
+                        <option value="24h" selected>Last 24 Hours</option>
+                        <option value="7d">Last 7 Days</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="chart-wrapper">
+            <canvas id="batteryChart"></canvas>
+        </div>
+    </div>
+
+    <hr class="section-divider">
 
     <!-- Trigger History Header with Dropdown Filter -->
     <div class="controls-bar">
