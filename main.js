@@ -34,6 +34,43 @@ let batteryHistory = []; // Raw battery datapoints: { channel, voltage, timestam
 let battChart = null;    // Chart.js instance
 
 // ==========================================
+// BATTERY PREDICTION MODEL (EVE 35V & TPS799)
+// ==========================================
+const batteryTracking = { 1: [], 2: [], 3: [] };
+
+// OCV Lookup Table for EVE 35V (ICR18650-35V) mapped for TPS799 LDO (3.393V output -> 3.45V cutoff)
+const ocvLookupTable = [
+    { v: 4.20, soc: 100.0 }, // Full charge
+    { v: 4.10, soc: 94.0 },  
+    { v: 4.00, soc: 84.0 },
+    { v: 3.90, soc: 72.0 },
+    { v: 3.80, soc: 60.0 },
+    { v: 3.70, soc: 48.0 },  // Middle of nominal plateau
+    { v: 3.60, soc: 30.0 },
+    { v: 3.50, soc: 10.0 },  // Plateau knee
+    { v: 3.45, soc: 0.0 }    // Hardware dropout cutoff
+];
+
+function calculateSOC(voltage) {
+    if (voltage >= 4.20) return 100.0;
+    if (voltage <= 3.45) return 0.0;
+    
+    for (let i = 0; i < ocvLookupTable.length - 1; i++) {
+        let upper = ocvLookupTable[i];
+        let lower = ocvLookupTable[i + 1];
+
+        if (voltage <= upper.v && voltage >= lower.v) {
+            let vRange = upper.v - lower.v;
+            let socRange = upper.soc - lower.soc;
+            let vOffset = voltage - lower.v;
+            
+            return lower.soc + ((vOffset / vRange) * socRange);
+        }
+    }
+    return 0;
+}
+
+// ==========================================
 // DATE FORMATTERS (DD/MM/YYYY)
 // ==========================================
 function formatChartDate(timestamp) {
@@ -78,7 +115,7 @@ function initChart() {
                     title: { display: true, text: 'Voltage (V)', color: '#888' },
                     ticks: { color: '#aaa' },
                     grid: { color: '#333' },
-                    suggestedMin: 2.8,
+                    suggestedMin: 3.4,
                     suggestedMax: 4.2
                 }
             },
@@ -106,7 +143,6 @@ function updateChart() {
     if (selectedTime === '24h') timeLimitMs = 24 * 60 * 60 * 1000;
     if (selectedTime === '7d') timeLimitMs = 7 * 24 * 60 * 60 * 1000;
 
-    // Filter data by time frame
     const filteredByTime = batteryHistory.filter(entry => {
         if (selectedTime === 'all') return true;
         const entryTime = new Date(entry.timestamp).getTime();
@@ -121,10 +157,7 @@ function updateChart() {
 
     let channelsToRender = selectedNode === 'all' ? [1, 2, 3] : [parseInt(selectedNode)];
 
-    // Sort the raw data chronologically first
     const sortedData = [...filteredByTime].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-    // Get unique labels in DD/MM/HH format for the X-axis
     const timestamps = Array.from(new Set(sortedData.map(d => formatChartDate(d.timestamp))));
 
     const datasets = channelsToRender.map(ch => {
@@ -162,7 +195,6 @@ if (singleNodeView) {
     statusGrid.style.display = 'none';
 }
 
-// Node Card Click Handler: Scroll to & filter graph
 [1, 2, 3].forEach(ch => {
     const card = document.getElementById(`card-ch${ch}`);
     if (card) {
@@ -171,8 +203,6 @@ if (singleNodeView) {
             nodeFilter.value = String(ch);
             renderLogs();
             updateChart();
-            
-            // Scroll smoothly to graph view
             document.getElementById('chart-section').scrollIntoView({ behavior: 'smooth' });
         });
     }
@@ -182,22 +212,59 @@ chartNodeFilter.addEventListener('change', updateChart);
 chartTimeFilter.addEventListener('change', updateChart);
 nodeFilter.addEventListener('change', renderLogs);
 
-// Initialize Chart
 initChart();
 
 // ==========================================
 // SHARED UI HELPER FUNCTIONS
 // ==========================================
 function updateBatteryUI(ch, voltage, timestampDate) {
-    const volt = parseFloat(voltage).toFixed(2);
+    const volt = parseFloat(voltage);
     if (ch >= 1 && ch <= 3) {
+        // Track history for dynamic calculations
+        batteryTracking[ch].push({ time: timestampDate.getTime(), volt: volt });
+
         const battEl = document.getElementById(`batt-ch${ch}`);
+        const predictEl = document.getElementById(`predict-ch${ch}`);
         if (!battEl) return;
         
-        battEl.innerText = `${volt} V`;
+        battEl.innerText = `${volt.toFixed(2)} V`;
         
-        if (volt >= 3.6) battEl.className = 'batt-val';
-        else if (volt >= 3.3) battEl.className = 'batt-val batt-low';
+        // Calculate non-linear State of Charge (SOC)
+        const currentSOC = calculateSOC(volt);
+        let predictionText = `${Math.round(currentSOC)}% | Gathering data...`;
+        let isCritical = false;
+
+        // Dynamic Database Prediction
+        const history = batteryTracking[ch];
+        if (history.length > 1) {
+            const oldest = history[0];
+            const newest = history[history.length - 1];
+            
+            const daysElapsed = (newest.time - oldest.time) / (1000 * 60 * 60 * 24);
+            const socDrop = calculateSOC(oldest.volt) - calculateSOC(newest.volt);
+            
+            if (daysElapsed >= 0.5 && socDrop > 0) {
+                const dynamicDailyBurnRate = socDrop / daysElapsed;
+                const estimatedDays = Math.round(currentSOC / dynamicDailyBurnRate);
+                
+                predictionText = `${Math.round(currentSOC)}% | ~${estimatedDays} days left`;
+                if (estimatedDays <= 14) isCritical = true;
+            }
+        }
+
+        if (predictEl) {
+            predictEl.innerText = predictionText;
+            if (isCritical) {
+                predictEl.style.color = '#ff3333';
+                predictEl.style.fontWeight = 'bold';
+            } else {
+                predictEl.style.color = '#888';
+                predictEl.style.fontWeight = 'normal';
+            }
+        }
+        
+        if (volt >= 3.70) battEl.className = 'batt-val';
+        else if (volt >= 3.50) battEl.className = 'batt-val batt-low';
         else battEl.className = 'batt-val batt-crit';
 
         const timeStr = formatLogDate(timestampDate).split(' ')[1];
@@ -288,9 +355,7 @@ async function loadHistory() {
                 const vNum = parseFloat(event.value);
                 const time = event.created_at;
 
-                // Push to chart telemetry repository
                 batteryHistory.push({ channel: event.channel, voltage: vNum, timestamp: time });
-
                 updateBatteryUI(event.channel, vNum, new Date(time));
 
             } else if (event.event_type.includes('HEALTH') || event.event_type.includes('DEAD')) {
@@ -386,7 +451,6 @@ client.on('message', (topic, message) => {
         
         updateBatteryUI(ch, volt, new Date());
         
-        // Save live reading to chart data & refresh chart
         batteryHistory.push({ channel: ch, voltage: volt, timestamp: nowIso });
         updateChart();
 
