@@ -341,6 +341,7 @@ async function loadHistory() {
         combinedData.forEach(event => {
             let msg = '';
             let type = 'normal';
+            const localTimestamp = event.created_at.replace(/(Z|[+-]\d{2}:\d{2})$/, '');
             
             if (event.event_type === 'FULL_NETWORK_ALARM') {
                 msg = `🚨 DB: ALARM TRIGGERED! Source: ${event.details}`;
@@ -353,10 +354,10 @@ async function loadHistory() {
                 type = 'batt';
                 
                 const vNum = parseFloat(event.value);
-                const time = event.created_at;
 
-                batteryHistory.push({ channel: event.channel, voltage: vNum, timestamp: time });
-                updateBatteryUI(event.channel, vNum, new Date(time));
+                // Pass the stripped timestamp instead of event.created_at
+                batteryHistory.push({ channel: event.channel, voltage: vNum, timestamp: localTimestamp });
+                updateBatteryUI(event.channel, vNum, new Date(localTimestamp));
 
             } else if (event.event_type.includes('HEALTH') || event.event_type.includes('DEAD')) {
                 msg = `🩺 DB: ${event.details}`;
@@ -370,7 +371,7 @@ async function loadHistory() {
                 masterEventLog.push({
                     message: msg,
                     type: type,
-                    created_at: event.created_at,
+                    created_at: localTimestamp, // Pass the stripped timestamp here too
                     channel: event.channel,
                     details: event.details
                 });
@@ -384,7 +385,6 @@ async function loadHistory() {
         addEvent(`Failed to load history from Supabase: ${error.message}`, 'health');
     }
 }
-
 loadHistory();
 
 // ==========================================
